@@ -1,0 +1,15 @@
+[package]
+name = "practical-networking-in-rust"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "http-client"
+path = "src/bin/http-client.rs"
+
+[[bin]]
+name = "http-server"
+path = "src/bin/http-server.rs"
+
+[dependencies]
+
