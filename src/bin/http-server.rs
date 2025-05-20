@@ -30,6 +30,12 @@ impl HttpStatus {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct Request {
+    method: String,
+    path: String
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct Response {
     http_status: HttpStatus,
     contents: String,
@@ -60,18 +66,22 @@ impl fmt::Display for Response {
     }
 }
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    let mut conn_incoming = listener.incoming();
+fn parse_request(stream_buffer: BufReader<&TcpStream>) -> Request {
+    let first_line = stream_buffer.lines().next().unwrap().unwrap();
+    let mut tokens = first_line.split_whitespace();
+    let method = tokens.next().unwrap().to_string();
+    let path = tokens.next().unwrap().to_string();
 
-    while let Some(Ok(stream)) = conn_incoming.next() {
-        handle_incoming_connection(stream);
+    Request {
+        method,
+        path
     }
 }
 
 fn handle_incoming_connection(mut stream: TcpStream) {
     let stream_buf = BufReader::new(&stream);
-    let http_req = stream_buf.lines().next().unwrap().unwrap();
+    let request = parse_request(stream_buf);
+    let http_req = format!("{} {} HTTP/1.1", request.method, request.path);
 
     let response: Response = match http_req.as_str() {
         "GET / HTTP/1.1" => {
@@ -100,3 +110,14 @@ fn handle_incoming_connection(mut stream: TcpStream) {
     println!("Http Response: {:#?}", resp_as_string);
     println!("==================================");
 }
+
+fn main() {
+    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+    let mut conn_incoming = listener.incoming();
+
+    while let Some(Ok(stream)) = conn_incoming.next() {
+        handle_incoming_connection(stream);
+    }
+}
+
+
