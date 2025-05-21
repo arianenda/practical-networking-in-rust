@@ -1,7 +1,5 @@
 use std::{
-    fmt, fs,
-    io::{BufReader, prelude::*},
-    net::{TcpListener, TcpStream},
+    collections::{HashMap}, fmt, fs, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,6 +64,57 @@ impl fmt::Display for Response {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PageContent {
+    Home, 
+    About,
+    Contact
+}
+
+impl PageContent {
+    fn get_file_path(&self) -> String {
+        match self {
+            PageContent::Home => "src/static/index.html".to_string(),
+            PageContent::About => "src/static/about.html".to_string(),
+            PageContent::Contact => "src/static/contact.html".to_string()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RequestHandler {
+    routes: HashMap<String, PageContent> 
+}
+
+impl RequestHandler {
+    fn new() -> Self {
+        let mut routes: HashMap<String, PageContent> = HashMap::new();
+        routes.insert("/".to_string(), PageContent::Home);
+        routes.insert("/about".to_string(), PageContent::About);
+        routes.insert("/contact".to_string(), PageContent::Contact);
+
+        RequestHandler { routes }
+    }
+
+    fn handle_request(&self, request: &Request) -> Response {
+        let method = &request.method;
+        if method == "GET" {
+            if let Some(file_content) = self.routes.get(&request.path) {
+                match fs::read_to_string(file_content.get_file_path()) {
+                    Ok(content) => {
+                        return Response::new(HttpStatus::Ok, content)
+                    }
+                    Err(_) => {
+                        return Response::new(HttpStatus::InternalServerError, "Internal Server Error".to_string())
+                    }
+                }
+            }
+        }
+
+        Response::new(HttpStatus::NotFound, fs::read_to_string("src/static/404.html").unwrap())
+    }
+}
+
 fn parse_request(stream_buffer: BufReader<&TcpStream>) -> Request {
     let first_line = stream_buffer.lines().next().unwrap().unwrap();
     let mut tokens = first_line.split_whitespace();
@@ -78,45 +127,29 @@ fn parse_request(stream_buffer: BufReader<&TcpStream>) -> Request {
     }
 }
 
-fn handle_incoming_connection(mut stream: TcpStream) {
+fn handle_incoming_connection(mut stream: TcpStream, req_handler: &RequestHandler) {
     let stream_buf = BufReader::new(&stream);
     let request = parse_request(stream_buf);
-    let http_req = format!("{} {} HTTP/1.1", request.method, request.path);
 
-    let response: Response = match http_req.as_str() {
-        "GET / HTTP/1.1" => {
-            let content = fs::read_to_string("src/static/index.html");
-            match content {
-                Ok(content) => Response::new(HttpStatus::Ok, content),
-                Err(_) => Response::new(
-                    HttpStatus::InternalServerError,
-                    "Internal Server Error 500 {}".to_string(),
-                ),
-            }
-        }
-        _ => Response::new(
-            HttpStatus::NotFound,
-            fs::read_to_string("src/static/404.html").unwrap(),
-        ),
-    };
-
+    let response = req_handler.handle_request(&request);
     let resp_as_string = format!("{}", response);
     let resp_as_bytes = resp_as_string.as_bytes();
 
     stream.write_all(resp_as_bytes).unwrap();
 
     println!("=======[Request triggered]========");
-    println!("Http Requests: {:#?}", http_req);
+    println!("Http Requests: {:#?}", request);
     println!("Http Response: {:#?}", resp_as_string);
     println!("==================================");
 }
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+    let request_handler = RequestHandler::new();
     let mut conn_incoming = listener.incoming();
 
     while let Some(Ok(stream)) = conn_incoming.next() {
-        handle_incoming_connection(stream);
+        handle_incoming_connection(stream, &request_handler);
     }
 }
 
