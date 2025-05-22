@@ -1,6 +1,8 @@
 use std::{
-    collections::{HashMap}, fmt, fs, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+    collections::HashMap, fmt, fs, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::Arc
 };
+
+use practical_networking_in_rust::ThreadPool;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum HttpStatus {
@@ -127,7 +129,7 @@ fn parse_request(stream_buffer: BufReader<&TcpStream>) -> Request {
     }
 }
 
-fn handle_incoming_connection(mut stream: TcpStream, req_handler: &RequestHandler) {
+fn handle_incoming_connection(mut stream: TcpStream, req_handler: Arc<RequestHandler>) {
     let stream_buf = BufReader::new(&stream);
     let request = parse_request(stream_buf);
 
@@ -145,11 +147,18 @@ fn handle_incoming_connection(mut stream: TcpStream, req_handler: &RequestHandle
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    let request_handler = RequestHandler::new();
+    // limit thread by 4
+    let pool = ThreadPool::new(4);
+
+    let request_handler = Arc::new(RequestHandler::new());
     let mut conn_incoming = listener.incoming();
 
+
     while let Some(Ok(stream)) = conn_incoming.next() {
-        handle_incoming_connection(stream, &request_handler);
+        let req_handle_clone = Arc::clone(&request_handler);
+        pool.execute(move || {
+            handle_incoming_connection(stream, req_handle_clone);
+        });
     }
 }
 
